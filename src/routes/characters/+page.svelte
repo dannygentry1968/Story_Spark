@@ -173,9 +173,9 @@
   {:else}
     <div class="grid grid-cols-4 gap-6">
       {#each characters as character (character.id)}
-        <div
-          class="card hover:shadow-md transition-shadow cursor-pointer"
-          onclick={() => openDetailModal(character)}
+        <a
+          href="/characters/{character.id}"
+          class="card hover:shadow-md transition-shadow cursor-pointer block"
         >
           <div class="aspect-square bg-gray-100 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
             {#if character.referenceImagePath}
@@ -191,7 +191,7 @@
           {#if character.seriesName}
             <p class="text-xs text-spark-600 mt-1">{character.seriesName}</p>
           {/if}
-        </div>
+        </a>
       {/each}
     </div>
   {/if}
