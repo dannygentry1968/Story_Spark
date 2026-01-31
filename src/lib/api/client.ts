@@ -373,3 +373,104 @@ export interface IllustrationStyle {
 export async function getIllustrationStyles(): Promise<IllustrationStyle[]> {
   return fetchApi<IllustrationStyle[]>('/api/generate/styles');
 }
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+export interface ExportJob {
+  id: string;
+  bookId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  format: string;
+  filePath?: string;
+  createdAt: Date;
+  completedAt?: Date;
+  downloadUrl?: string;
+}
+
+export interface ExportConfig {
+  bookId: string;
+  type: 'interior' | 'cover' | 'complete';
+  trimSize?: string;
+  paperType?: 'white' | 'cream';
+  includeBleed?: boolean;
+  colorMode?: 'color' | 'bw';
+}
+
+export async function createExport(config: ExportConfig): Promise<ExportJob> {
+  const response = await fetch('/api/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create export');
+  }
+
+  return response.json();
+}
+
+export async function getExportStatus(exportId: string): Promise<ExportJob> {
+  const response = await fetch(`/api/export/${exportId}`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get export status');
+  }
+
+  return response.json();
+}
+
+export async function getBookExports(bookId: string): Promise<ExportJob[]> {
+  const response = await fetch(`/api/export?bookId=${bookId}`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get exports');
+  }
+
+  return response.json();
+}
+
+export async function deleteExport(exportId: string): Promise<{ success: boolean }> {
+  const response = await fetch(`/api/export/${exportId}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete export');
+  }
+
+  return response.json();
+}
+
+export function getExportDownloadUrl(exportId: string): string {
+  return `/api/export/${exportId}/download`;
+}
+
+/**
+ * Poll for export completion
+ */
+export async function waitForExport(
+  exportId: string,
+  options: { maxAttempts?: number; intervalMs?: number } = {}
+): Promise<ExportJob> {
+  const { maxAttempts = 60, intervalMs = 2000 } = options;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const status = await getExportStatus(exportId);
+
+    if (status.status === 'completed' || status.status === 'failed') {
+      return status;
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error('Export timed out');
+}

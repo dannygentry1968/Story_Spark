@@ -3,13 +3,19 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { BOOK_TYPES, AGE_RANGES, BOOK_STATUS, PROFIT_PIPELINE } from '$lib/types';
-  import { getBook, getBookPages, updateBook, generateOutline, generatePageText, generatePageIllustration, deleteBook } from '$lib/api/client';
+  import {
+    getBook, getBookPages, updateBook, generateOutline, generatePageText,
+    generatePageIllustration, deleteBook, createExport, getBookExports,
+    getExportStatus, getExportDownloadUrl, deleteExport
+  } from '$lib/api/client';
   import { showError, showSuccess, showInfo } from '$lib/stores';
+  import { TRIM_SIZES } from '$lib/services/pdf-export';
 
   const bookId = $page.params.id;
 
   let book: any = null;
   let pages: any[] = [];
+  let exports: any[] = [];
   let loading = true;
   let activeTab: 'overview' | 'pages' | 'illustrations' | 'export' = 'overview';
   let generating = false;
@@ -18,6 +24,15 @@
   let editingTitle = false;
   let editedTitle = '';
 
+  // Export state
+  let exporting = false;
+  let exportType: 'interior' | 'cover' = 'interior';
+  let exportTrimSize = '8.5x8.5';
+  let exportPaperType: 'white' | 'cream' = 'white';
+  let exportIncludeBleed = true;
+  let currentExportId: string | null = null;
+  let exportProgress = 0;
+
   onMount(async () => {
     await loadBook();
   });
@@ -25,19 +40,97 @@
   async function loadBook() {
     try {
       loading = true;
-      const [bookData, pagesData] = await Promise.all([
+      const [bookData, pagesData, exportsData] = await Promise.all([
         getBook(bookId),
-        getBookPages(bookId)
+        getBookPages(bookId),
+        getBookExports(bookId).catch(() => [])
       ]);
       book = bookData;
       pages = pagesData;
+      exports = exportsData;
       editedTitle = book.title;
+      exportTrimSize = book.trimSize || '8.5x8.5';
     } catch (err) {
       console.error('Failed to load book:', err);
       showError('Failed to load book');
       goto('/books');
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleExport() {
+    try {
+      exporting = true;
+      exportProgress = 0;
+      showInfo(`Creating ${exportType} PDF...`);
+
+      const job = await createExport({
+        bookId: book.id,
+        type: exportType,
+        trimSize: exportTrimSize,
+        paperType: exportPaperType,
+        includeBleed: exportIncludeBleed,
+        colorMode: 'color'
+      });
+
+      currentExportId = job.id;
+      exports = [job, ...exports];
+
+      // Poll for completion
+      await pollExportStatus(job.id);
+    } catch (err) {
+      console.error('Failed to create export:', err);
+      showError('Failed to create export');
+    } finally {
+      exporting = false;
+      currentExportId = null;
+    }
+  }
+
+  async function pollExportStatus(exportId: string) {
+    const maxAttempts = 60;
+    const intervalMs = 2000;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const status = await getExportStatus(exportId);
+        exportProgress = Math.min(90, (i / maxAttempts) * 100);
+
+        // Update exports list
+        const idx = exports.findIndex(e => e.id === exportId);
+        if (idx !== -1) {
+          exports[idx] = status;
+          exports = [...exports];
+        }
+
+        if (status.status === 'completed') {
+          exportProgress = 100;
+          showSuccess('Export completed! Click to download.');
+          return;
+        }
+
+        if (status.status === 'failed') {
+          showError('Export failed. Please try again.');
+          return;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+      } catch (err) {
+        console.error('Failed to check export status:', err);
+      }
+    }
+
+    showError('Export timed out. Please try again.');
+  }
+
+  async function handleDeleteExport(exportId: string) {
+    try {
+      await deleteExport(exportId);
+      exports = exports.filter(e => e.id !== exportId);
+      showSuccess('Export deleted');
+    } catch (err) {
+      showError('Failed to delete export');
     }
   }
 
@@ -452,33 +545,187 @@
       </div>
 
     {:else if activeTab === 'export'}
-      <div class="card">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Export Book</h2>
+      <div class="grid grid-cols-3 gap-6">
+        <!-- Export Options -->
+        <div class="col-span-2 card">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Create Export</h2>
 
-        <div class="grid grid-cols-3 gap-4">
-          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
-            <div class="text-3xl mb-2">📄</div>
-            <div class="font-medium text-gray-900">Print PDF</div>
-            <div class="text-xs text-gray-500 mt-1">KDP-ready interior</div>
+          <!-- Export Type Selection -->
+          <div class="grid grid-cols-2 gap-4 mb-6">
+            <button
+              onclick={() => exportType = 'interior'}
+              class="border-2 rounded-xl p-4 text-left transition-all
+                {exportType === 'interior' ? 'border-spark-500 bg-spark-50' : 'border-gray-200 hover:border-gray-300'}"
+            >
+              <div class="text-2xl mb-2">📄</div>
+              <div class="font-medium text-gray-900">Interior PDF</div>
+              <div class="text-xs text-gray-500 mt-1">KDP-ready book interior with all pages</div>
+            </button>
+
+            <button
+              onclick={() => exportType = 'cover'}
+              class="border-2 rounded-xl p-4 text-left transition-all
+                {exportType === 'cover' ? 'border-spark-500 bg-spark-50' : 'border-gray-200 hover:border-gray-300'}"
+            >
+              <div class="text-2xl mb-2">🖼️</div>
+              <div class="font-medium text-gray-900">Cover PDF</div>
+              <div class="text-xs text-gray-500 mt-1">Print-ready cover with spine</div>
+            </button>
           </div>
 
-          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
-            <div class="text-3xl mb-2">📱</div>
-            <div class="font-medium text-gray-900">eBook</div>
-            <div class="text-xs text-gray-500 mt-1">EPUB format</div>
+          <!-- Export Settings -->
+          <div class="space-y-4 mb-6">
+            <div>
+              <label for="trimSize" class="label">Trim Size</label>
+              <select id="trimSize" bind:value={exportTrimSize} class="input">
+                {#each Object.entries(TRIM_SIZES) as [key, size]}
+                  <option value={key}>{size.name}</option>
+                {/each}
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="paperType" class="label">Paper Type</label>
+                <select id="paperType" bind:value={exportPaperType} class="input">
+                  <option value="white">White Paper</option>
+                  <option value="cream">Cream Paper</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="label">Bleed</label>
+                <label class="flex items-center gap-2 mt-2">
+                  <input type="checkbox" bind:checked={exportIncludeBleed} class="rounded border-gray-300" />
+                  <span class="text-sm text-gray-700">Include 0.125" bleed</span>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
-            <div class="text-3xl mb-2">🖼️</div>
-            <div class="font-medium text-gray-900">Cover</div>
-            <div class="text-xs text-gray-500 mt-1">Print-ready cover</div>
-          </div>
+          <!-- Export Progress -->
+          {#if exporting}
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm text-gray-600">Generating PDF...</span>
+                <span class="text-sm text-gray-500">{Math.round(exportProgress)}%</span>
+              </div>
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  class="bg-spark-500 h-2 rounded-full transition-all duration-300"
+                  style="width: {exportProgress}%"
+                ></div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Export Button -->
+          <button
+            onclick={handleExport}
+            disabled={exporting || pages.length === 0}
+            class="btn btn-primary w-full"
+          >
+            {#if exporting}
+              <span class="animate-spin">⏳</span> Generating {exportType === 'interior' ? 'Interior' : 'Cover'} PDF...
+            {:else}
+              📥 Export {exportType === 'interior' ? 'Interior' : 'Cover'} PDF
+            {/if}
+          </button>
+
+          {#if pages.length === 0}
+            <p class="text-sm text-amber-600 mt-2 text-center">
+              ⚠️ Add pages to your book before exporting
+            </p>
+          {/if}
         </div>
 
-        <div class="mt-6 pt-6 border-t">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Export History</h3>
-          <p class="text-gray-500 text-sm">No exports yet</p>
+        <!-- KDP Specs Info -->
+        <div class="space-y-4">
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">KDP Specifications</h3>
+            <div class="space-y-2 text-sm text-gray-600">
+              <div class="flex justify-between">
+                <span>Trim Size:</span>
+                <span class="font-medium">{TRIM_SIZES[exportTrimSize as keyof typeof TRIM_SIZES]?.name || exportTrimSize}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Page Count:</span>
+                <span class="font-medium">{pages.length || book.pageCount || 24}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Bleed:</span>
+                <span class="font-medium">{exportIncludeBleed ? '0.125"' : 'None'}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Paper:</span>
+                <span class="font-medium capitalize">{exportPaperType}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card bg-blue-50 border-blue-200">
+            <h3 class="text-sm font-medium text-blue-800 mb-2">💡 Export Tips</h3>
+            <ul class="text-xs text-blue-700 space-y-1">
+              <li>• Use bleed for full-page illustrations</li>
+              <li>• White paper is best for colorful books</li>
+              <li>• Square format works great for picture books</li>
+              <li>• Always preview before uploading to KDP</li>
+            </ul>
+          </div>
         </div>
+      </div>
+
+      <!-- Export History -->
+      <div class="card mt-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Export History</h3>
+
+        {#if exports.length === 0}
+          <p class="text-gray-500 text-center py-6">No exports yet. Create your first export above!</p>
+        {:else}
+          <div class="space-y-3">
+            {#each exports as exp (exp.id)}
+              <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                  <div class="text-2xl">
+                    {exp.status === 'completed' ? '✅' : exp.status === 'failed' ? '❌' : '⏳'}
+                  </div>
+                  <div>
+                    <div class="font-medium text-gray-900">
+                      {exp.format?.toUpperCase() || 'PDF'} Export
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {new Date(exp.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  {#if exp.status === 'completed'}
+                    <a
+                      href={getExportDownloadUrl(exp.id)}
+                      class="btn btn-primary text-sm"
+                      download
+                    >
+                      📥 Download
+                    </a>
+                  {:else if exp.status === 'processing' || exp.status === 'pending'}
+                    <span class="text-sm text-gray-500">Processing...</span>
+                  {:else}
+                    <span class="text-sm text-red-500">Failed</span>
+                  {/if}
+
+                  <button
+                    onclick={() => handleDeleteExport(exp.id)}
+                    class="text-gray-400 hover:text-red-500 p-1"
+                    title="Delete export"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
