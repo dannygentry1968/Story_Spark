@@ -56,6 +56,40 @@ export interface DashboardStats {
     status: string;
     updatedAt: Date;
   }[];
+  analytics?: {
+    booksByStatus: {
+      draft: number;
+      writing: number;
+      illustrating: number;
+      review: number;
+      exported: number;
+      published: number;
+    };
+    booksByType: {
+      picture: number;
+      board: number;
+      early_reader: number;
+      activity: number;
+      coloring: number;
+    };
+    monthlyTrends: {
+      month: string;
+      year: number;
+      created: number;
+      completed: number;
+    }[];
+    completionRate: number;
+    avgDaysToComplete: number;
+  };
+  recentActivity?: {
+    id: string;
+    type: string;
+    entityId: string;
+    entityName: string;
+    entityType: string;
+    timestamp: Date | string;
+    description: string;
+  }[];
 }
 
 export async function getStats(): Promise<DashboardStats> {

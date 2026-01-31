@@ -5,6 +5,7 @@
   import { stats, showError } from '$lib/stores';
 
   let loading = true;
+  let showAnalytics = true;
 
   onMount(async () => {
     try {
@@ -30,6 +31,69 @@
   };
 
   $: recentBooks = $stats?.recentBooks ?? [];
+  $: analytics = $stats?.analytics;
+  $: recentActivity = $stats?.recentActivity ?? [];
+
+  // Pipeline data derived from analytics
+  $: pipelineData = analytics?.booksByStatus ?? {
+    draft: 0,
+    writing: 0,
+    illustrating: 0,
+    review: 0,
+    exported: 0,
+    published: 0
+  };
+
+  // Calculate max for bar chart scaling
+  $: maxPipelineCount = Math.max(
+    1,
+    pipelineData.draft,
+    pipelineData.writing,
+    pipelineData.illustrating,
+    pipelineData.review,
+    pipelineData.exported,
+    pipelineData.published
+  );
+
+  // Activity icon mapping
+  function getActivityIcon(type: string): string {
+    const icons: Record<string, string> = {
+      book_created: '📖',
+      book_published: '🎉',
+      book_exported: '📤',
+      character_created: '👤',
+      character_image: '🖼️',
+      series_created: '📚',
+      niche_created: '🔍'
+    };
+    return icons[type] || '📝';
+  }
+
+  // Format relative time
+  function formatRelativeTime(timestamp: Date | string): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  // Status colors for pipeline
+  const statusColors: Record<string, string> = {
+    draft: 'bg-gray-400',
+    writing: 'bg-blue-500',
+    illustrating: 'bg-purple-500',
+    review: 'bg-yellow-500',
+    exported: 'bg-green-500',
+    published: 'bg-spark-500'
+  };
 </script>
 
 <svelte:head>
@@ -38,9 +102,17 @@
 
 <div class="p-8 max-w-7xl mx-auto">
   <!-- Header -->
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to StorySpark</h1>
-    <p class="text-gray-600">Your AI-powered children's book creation studio</p>
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to StorySpark</h1>
+      <p class="text-gray-600">Your AI-powered children's book creation studio</p>
+    </div>
+    <button
+      onclick={() => showAnalytics = !showAnalytics}
+      class="btn btn-secondary text-sm"
+    >
+      {showAnalytics ? '📊 Hide Analytics' : '📊 Show Analytics'}
+    </button>
   </div>
 
   <!-- Quick Stats -->
@@ -70,6 +142,106 @@
       <div class="card">
         <div class="text-3xl font-bold text-spark-600">{counts.thisMonth}</div>
         <div class="text-sm text-gray-500">This Month</div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Analytics Section -->
+  {#if showAnalytics && !loading && analytics}
+    <div class="grid grid-cols-3 gap-6 mb-8">
+      <!-- Book Pipeline Visualization -->
+      <div class="card col-span-2">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">📊 Book Pipeline</h2>
+        <div class="space-y-3">
+          {#each Object.entries(pipelineData) as [status, count]}
+            <div class="flex items-center gap-3">
+              <div class="w-24 text-sm text-gray-600 capitalize">{status.replace('_', ' ')}</div>
+              <div class="flex-1 h-8 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  class="{statusColors[status]} h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
+                  style="width: {Math.max(5, (count / maxPipelineCount) * 100)}%"
+                >
+                  {#if count > 0}
+                    <span class="text-white text-xs font-medium">{count}</span>
+                  {/if}
+                </div>
+              </div>
+              <div class="w-8 text-sm font-medium text-gray-700">{count}</div>
+            </div>
+          {/each}
+        </div>
+
+        <!-- Pipeline Summary -->
+        <div class="mt-6 pt-4 border-t grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div class="text-2xl font-bold text-spark-600">{analytics.completionRate}%</div>
+            <div class="text-xs text-gray-500">Completion Rate</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-blue-600">{analytics.avgDaysToComplete || '-'}</div>
+            <div class="text-xs text-gray-500">Avg Days to Complete</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-green-600">{counts.exported + counts.published}</div>
+            <div class="text-xs text-gray-500">Ready for KDP</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Books by Type -->
+      <div class="card">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">📚 Books by Type</h2>
+        <div class="space-y-2">
+          {#each Object.entries(analytics.booksByType) as [type, count]}
+            {@const bookType = BOOK_TYPES[type as keyof typeof BOOK_TYPES]}
+            {#if bookType}
+              <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-2">
+                  <span>{bookType.icon}</span>
+                  <span class="text-sm text-gray-700">{bookType.name}</span>
+                </div>
+                <span class="text-sm font-medium text-gray-900">{count}</span>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    <!-- Monthly Trends Chart -->
+    <div class="card mb-8">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">📈 Monthly Trends</h2>
+      <div class="flex items-end justify-between h-40 px-4">
+        {#each analytics.monthlyTrends as trend}
+          {@const maxTrend = Math.max(...analytics.monthlyTrends.map(t => Math.max(t.created, t.completed)), 1)}
+          <div class="flex flex-col items-center gap-1 flex-1">
+            <div class="flex items-end gap-1 h-28">
+              <!-- Created bar -->
+              <div
+                class="w-6 bg-blue-400 rounded-t transition-all duration-500"
+                style="height: {Math.max(4, (trend.created / maxTrend) * 100)}%"
+                title="Created: {trend.created}"
+              ></div>
+              <!-- Completed bar -->
+              <div
+                class="w-6 bg-green-500 rounded-t transition-all duration-500"
+                style="height: {Math.max(4, (trend.completed / maxTrend) * 100)}%"
+                title="Completed: {trend.completed}"
+              ></div>
+            </div>
+            <div class="text-xs text-gray-500">{trend.month}</div>
+          </div>
+        {/each}
+      </div>
+      <div class="flex items-center justify-center gap-6 mt-4 text-sm">
+        <div class="flex items-center gap-2">
+          <div class="w-4 h-4 bg-blue-400 rounded"></div>
+          <span class="text-gray-600">Books Created</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="w-4 h-4 bg-green-500 rounded"></div>
+          <span class="text-gray-600">Books Completed</span>
+        </div>
       </div>
     </div>
   {/if}
@@ -112,12 +284,12 @@
     </div>
   </div>
 
-  <!-- Two Column Layout -->
-  <div class="grid grid-cols-2 gap-6">
+  <!-- Three Column Layout -->
+  <div class="grid grid-cols-3 gap-6">
     <!-- Recent Books -->
     <div class="card">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-semibold text-gray-900">Recent Books</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Recent Books</h2>
         <a href="/books" class="text-sm text-spark-600 hover:text-spark-700">View all →</a>
       </div>
 
@@ -140,7 +312,7 @@
           {#each recentBooks as book}
             <a href="/books/{book.id}" class="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
               <div class="flex items-center justify-between">
-                <div class="font-medium text-gray-900">{book.title}</div>
+                <div class="font-medium text-gray-900 truncate">{book.title}</div>
                 <span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">
                   {BOOK_STATUS[book.status as keyof typeof BOOK_STATUS]?.label || book.status}
                 </span>
@@ -154,11 +326,49 @@
       {/if}
     </div>
 
+    <!-- Recent Activity Feed -->
+    <div class="card">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h2>
+
+      {#if loading}
+        <div class="space-y-3">
+          {#each Array(5) as _}
+            <div class="flex items-start gap-3 animate-pulse">
+              <div class="w-8 h-8 bg-gray-200 rounded-full"></div>
+              <div class="flex-1">
+                <div class="h-3 bg-gray-200 rounded w-3/4 mb-1"></div>
+                <div class="h-2 bg-gray-100 rounded w-1/4"></div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else if recentActivity.length === 0}
+        <div class="text-center py-8 text-gray-500">
+          <div class="text-4xl mb-2">📝</div>
+          <p>No recent activity</p>
+        </div>
+      {:else}
+        <div class="space-y-3 max-h-[300px] overflow-y-auto">
+          {#each recentActivity as activity}
+            <div class="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors">
+              <div class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm flex-shrink-0">
+                {getActivityIcon(activity.type)}
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm text-gray-700 truncate">{activity.description}</p>
+                <p class="text-xs text-gray-400">{formatRelativeTime(activity.timestamp)}</p>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <!-- Quick Actions & Stats -->
     <div class="space-y-6">
       <!-- Quick Actions -->
       <div class="card">
-        <h2 class="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
         <div class="space-y-2">
           <a href="/niche" class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
             <span class="text-xl">🔍</span>
@@ -184,22 +394,22 @@
         </div>
       </div>
 
-      <!-- More Stats -->
+      <!-- Your Library Stats -->
       <div class="card">
-        <h2 class="text-xl font-semibold text-gray-900 mb-4">Your Library</h2>
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Your Library</h2>
         <div class="grid grid-cols-3 gap-4 text-center">
-          <div>
+          <a href="/series" class="hover:bg-gray-50 rounded-lg p-2 transition-colors">
             <div class="text-2xl font-bold text-gray-900">{counts.series}</div>
             <div class="text-sm text-gray-500">Series</div>
-          </div>
-          <div>
+          </a>
+          <a href="/characters" class="hover:bg-gray-50 rounded-lg p-2 transition-colors">
             <div class="text-2xl font-bold text-gray-900">{counts.characters}</div>
             <div class="text-sm text-gray-500">Characters</div>
-          </div>
-          <div>
+          </a>
+          <a href="/niche" class="hover:bg-gray-50 rounded-lg p-2 transition-colors">
             <div class="text-2xl font-bold text-gray-900">{counts.niches}</div>
             <div class="text-sm text-gray-500">Niches</div>
-          </div>
+          </a>
         </div>
       </div>
     </div>
