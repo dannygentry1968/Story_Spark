@@ -14,9 +14,9 @@
   let formData = {
     name: '',
     role: '',
+    description: '',
     visualDescription: '',
     personality: '',
-    backstory: '',
     seriesId: ''
   };
 
@@ -46,9 +46,9 @@
     formData = {
       name: '',
       role: '',
+      description: '',
       visualDescription: '',
       personality: '',
-      backstory: '',
       seriesId: ''
     };
     showCreateModal = true;
@@ -64,6 +64,10 @@
       showError('Please enter a character name');
       return;
     }
+    if (!formData.description.trim()) {
+      showError('Please provide a character description');
+      return;
+    }
     if (!formData.visualDescription.trim()) {
       showError('Please provide a visual description');
       return;
@@ -73,9 +77,9 @@
       const newCharacter = await createCharacter({
         name: formData.name.trim(),
         role: formData.role.trim() || null,
+        description: formData.description.trim(),
         visualDescription: formData.visualDescription.trim(),
         personality: formData.personality.trim() || null,
-        backstory: formData.backstory.trim() || null,
         seriesId: formData.seriesId || null
       });
 
@@ -227,6 +231,18 @@
         </div>
 
         <div>
+          <label for="description" class="label">Description <span class="text-red-500">*</span></label>
+          <textarea
+            id="description"
+            bind:value={formData.description}
+            placeholder="Character's background, story, personality, and key traits for AI story generation..."
+            rows="3"
+            class="input resize-none"
+          ></textarea>
+          <p class="text-xs text-gray-500 mt-1">This description helps AI generate better stories with this character.</p>
+        </div>
+
+        <div>
           <label for="visual" class="label">Visual Description <span class="text-red-500">*</span></label>
           <textarea
             id="visual"
@@ -249,16 +265,6 @@
           ></textarea>
         </div>
 
-        <div>
-          <label for="backstory" class="label">Backstory</label>
-          <textarea
-            id="backstory"
-            bind:value={formData.backstory}
-            placeholder="Character's background, history, motivations..."
-            rows="2"
-            class="input resize-none"
-          ></textarea>
-        </div>
       </div>
 
       <div class="flex gap-3 mt-6">

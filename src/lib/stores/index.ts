@@ -134,8 +134,25 @@ export interface Toast {
 
 export const toasts = writable<Toast[]>([]);
 
+// Generate unique ID with fallback for insecure contexts (HTTP)
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // Falls through to fallback
+    }
+  }
+  // Fallback for insecure contexts
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export function addToast(toast: Omit<Toast, 'id'>): string {
-  const id = crypto.randomUUID();
+  const id = generateUUID();
   const newToast = { ...toast, id };
   toasts.update(t => [...t, newToast]);
 

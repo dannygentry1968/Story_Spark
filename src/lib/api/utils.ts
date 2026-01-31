@@ -25,9 +25,22 @@ export async function parseBody<T>(request: Request): Promise<T | null> {
 
 /**
  * Generate a unique ID (UUID v4 format)
+ * Includes fallback for insecure contexts (HTTP)
  */
 export function generateId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // Falls through to fallback
+    }
+  }
+  // Fallback for insecure contexts
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 /**
