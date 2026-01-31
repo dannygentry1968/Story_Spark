@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/stores';
+  import Toast from '$lib/components/Toast.svelte';
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: '🏠' },
@@ -55,7 +56,10 @@
   </aside>
 
   <!-- Main Content -->
-  <main class="flex-1 overflow-auto">
+  <main class="flex-1 overflow-auto bg-gray-50">
     {@render children()}
   </main>
 </div>
+
+<!-- Toast Notifications -->
+<Toast />

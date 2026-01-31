@@ -1,0 +1,505 @@
+<script lang="ts">
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { BOOK_TYPES, AGE_RANGES, BOOK_STATUS, PROFIT_PIPELINE } from '$lib/types';
+  import { getBook, getBookPages, updateBook, generateOutline, generatePageText, generatePageIllustration, deleteBook } from '$lib/api/client';
+  import { showError, showSuccess, showInfo } from '$lib/stores';
+
+  const bookId = $page.params.id;
+
+  let book: any = null;
+  let pages: any[] = [];
+  let loading = true;
+  let activeTab: 'overview' | 'pages' | 'illustrations' | 'export' = 'overview';
+  let generating = false;
+  let generatingPageId: string | null = null;
+  let showDeleteModal = false;
+  let editingTitle = false;
+  let editedTitle = '';
+
+  onMount(async () => {
+    await loadBook();
+  });
+
+  async function loadBook() {
+    try {
+      loading = true;
+      const [bookData, pagesData] = await Promise.all([
+        getBook(bookId),
+        getBookPages(bookId)
+      ]);
+      book = bookData;
+      pages = pagesData;
+      editedTitle = book.title;
+    } catch (err) {
+      console.error('Failed to load book:', err);
+      showError('Failed to load book');
+      goto('/books');
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function handleGenerateOutline() {
+    if (!book.concept) {
+      showError('Please add a book concept first');
+      return;
+    }
+
+    try {
+      generating = true;
+      showInfo('Generating story outline...');
+
+      const result = await generateOutline({
+        bookId: book.id,
+        bookType: book.bookType,
+        targetAge: book.targetAge,
+        concept: book.concept,
+        pageCount: book.pageCount
+      });
+
+      showSuccess('Outline generated!');
+      await loadBook(); // Reload to get new pages
+    } catch (err) {
+      console.error('Failed to generate outline:', err);
+      showError('Failed to generate outline');
+    } finally {
+      generating = false;
+    }
+  }
+
+  async function handleGeneratePageText(pageId: string, pageNumber: number) {
+    try {
+      generatingPageId = pageId;
+      showInfo(`Generating text for page ${pageNumber}...`);
+
+      const pageData = pages.find(p => p.id === pageId);
+
+      await generatePageText({
+        bookId: book.id,
+        pageId,
+        pageNumber,
+        outline: pageData?.outline || '',
+        bookType: book.bookType,
+        targetAge: book.targetAge
+      });
+
+      showSuccess('Page text generated!');
+      await loadBook();
+    } catch (err) {
+      console.error('Failed to generate page text:', err);
+      showError('Failed to generate page text');
+    } finally {
+      generatingPageId = null;
+    }
+  }
+
+  async function handleGenerateIllustration(pageId: string, pageNumber: number) {
+    try {
+      generatingPageId = pageId;
+      showInfo(`Generating illustration for page ${pageNumber}...`);
+
+      const pageData = pages.find(p => p.id === pageId);
+
+      await generatePageIllustration({
+        bookId: book.id,
+        pageId,
+        pageNumber,
+        prompt: pageData?.illustrationPrompt || pageData?.outline || '',
+        style: book.illustrationStyle || 'watercolor'
+      });
+
+      showSuccess('Illustration generated!');
+      await loadBook();
+    } catch (err) {
+      console.error('Failed to generate illustration:', err);
+      showError('Failed to generate illustration');
+    } finally {
+      generatingPageId = null;
+    }
+  }
+
+  async function handleUpdateTitle() {
+    if (!editedTitle.trim()) {
+      showError('Title cannot be empty');
+      return;
+    }
+
+    try {
+      await updateBook(bookId, { title: editedTitle.trim() });
+      book.title = editedTitle.trim();
+      editingTitle = false;
+      showSuccess('Title updated!');
+    } catch (err) {
+      showError('Failed to update title');
+    }
+  }
+
+  async function handleUpdateStatus(newStatus: string) {
+    try {
+      await updateBook(bookId, { status: newStatus });
+      book.status = newStatus;
+      showSuccess('Status updated!');
+    } catch (err) {
+      showError('Failed to update status');
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteBook(bookId);
+      showSuccess('Book deleted');
+      goto('/books');
+    } catch (err) {
+      showError('Failed to delete book');
+    }
+  }
+
+  $: bookTypeInfo = book ? BOOK_TYPES[book.bookType as keyof typeof BOOK_TYPES] : null;
+  $: ageInfo = book ? AGE_RANGES[book.targetAge as keyof typeof AGE_RANGES] : null;
+  $: statusInfo = book ? BOOK_STATUS[book.status as keyof typeof BOOK_STATUS] : null;
+  $: completedPages = pages.filter(p => p.text && p.illustrationPath).length;
+  $: progress = pages.length > 0 ? Math.round((completedPages / pages.length) * 100) : 0;
+</script>
+
+<svelte:head>
+  <title>{book?.title || 'Loading...'} | StorySpark</title>
+</svelte:head>
+
+{#if loading}
+  <div class="p-8 max-w-6xl mx-auto">
+    <div class="animate-pulse">
+      <div class="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+      <div class="h-4 bg-gray-100 rounded w-1/4 mb-8"></div>
+      <div class="card h-64"></div>
+    </div>
+  </div>
+{:else if book}
+  <div class="p-8 max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="mb-6">
+      <a href="/books" class="text-spark-600 hover:text-spark-700 text-sm mb-2 inline-block">← Back to Books</a>
+
+      <div class="flex items-start justify-between">
+        <div class="flex-1">
+          {#if editingTitle}
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                bind:value={editedTitle}
+                class="text-3xl font-bold text-gray-900 border-b-2 border-spark-500 bg-transparent focus:outline-none"
+                onkeydown={(e) => e.key === 'Enter' && handleUpdateTitle()}
+              />
+              <button onclick={handleUpdateTitle} class="text-green-600 hover:text-green-700">✓</button>
+              <button onclick={() => { editingTitle = false; editedTitle = book.title; }} class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+          {:else}
+            <h1 class="text-3xl font-bold text-gray-900 cursor-pointer hover:text-spark-700" onclick={() => editingTitle = true}>
+              {book.title}
+              <span class="text-sm font-normal text-gray-400 ml-2">✏️</span>
+            </h1>
+          {/if}
+
+          <div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
+            <span>{bookTypeInfo?.icon} {bookTypeInfo?.name}</span>
+            <span>Ages {ageInfo?.label}</span>
+            <span>{book.pageCount} pages</span>
+            <span>{book.trimSize}"</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <select
+            value={book.status}
+            onchange={(e) => handleUpdateStatus(e.currentTarget.value)}
+            class="input py-1 px-3 text-sm"
+          >
+            {#each Object.entries(BOOK_STATUS) as [key, status]}
+              <option value={key}>{status.label}</option>
+            {/each}
+          </select>
+
+          <button onclick={() => showDeleteModal = true} class="btn btn-secondary text-red-600 hover:bg-red-50">
+            🗑️ Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="card mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium text-gray-700">Book Progress</span>
+        <span class="text-sm text-gray-500">{completedPages}/{pages.length} pages complete</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-2">
+        <div
+          class="bg-spark-500 h-2 rounded-full transition-all duration-300"
+          style="width: {progress}%"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 mb-6">
+      <nav class="flex gap-6">
+        {#each ['overview', 'pages', 'illustrations', 'export'] as tab}
+          <button
+            onclick={() => activeTab = tab as typeof activeTab}
+            class="py-3 text-sm font-medium border-b-2 transition-colors
+              {activeTab === tab
+                ? 'border-spark-500 text-spark-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'}"
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        {/each}
+      </nav>
+    </div>
+
+    <!-- Tab Content -->
+    {#if activeTab === 'overview'}
+      <div class="grid grid-cols-3 gap-6">
+        <!-- Book Concept -->
+        <div class="col-span-2 card">
+          <h2 class="text-lg font-semibold text-gray-900 mb-3">Book Concept</h2>
+          {#if book.concept}
+            <p class="text-gray-600 whitespace-pre-wrap">{book.concept}</p>
+          {:else}
+            <p class="text-gray-400 italic">No concept added yet.</p>
+          {/if}
+
+          <div class="mt-4 pt-4 border-t">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Story Outline</h3>
+            {#if book.outline}
+              <p class="text-gray-600 text-sm whitespace-pre-wrap">{book.outline}</p>
+            {:else}
+              <div class="text-center py-4">
+                <p class="text-gray-500 mb-3">Generate a story outline based on your concept</p>
+                <button
+                  onclick={handleGenerateOutline}
+                  disabled={generating || !book.concept}
+                  class="btn btn-primary"
+                >
+                  {#if generating}
+                    <span class="animate-spin">⏳</span> Generating...
+                  {:else}
+                    ✨ Generate Outline
+                  {/if}
+                </button>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="space-y-4">
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Status</h3>
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full {statusInfo?.color.replace('text-', 'bg-')}"></span>
+              <span class="font-medium">{statusInfo?.label}</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Pages</h3>
+            <div class="text-2xl font-bold text-gray-900">{pages.length}</div>
+            <div class="text-sm text-gray-500">{completedPages} completed</div>
+          </div>
+
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Characters</h3>
+            <div class="text-2xl font-bold text-gray-900">{book.characters?.length || 0}</div>
+            <a href="/characters" class="text-sm text-spark-600 hover:text-spark-700">Manage →</a>
+          </div>
+
+          {#if book.seriesId}
+            <div class="card">
+              <h3 class="text-sm font-medium text-gray-700 mb-3">Series</h3>
+              <a href="/series/{book.seriesId}" class="text-spark-600 hover:text-spark-700">
+                View Series →
+              </a>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+    {:else if activeTab === 'pages'}
+      <div class="space-y-4">
+        {#if pages.length === 0}
+          <div class="card text-center py-12">
+            <div class="text-4xl mb-3">📄</div>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No pages yet</h3>
+            <p class="text-gray-500 mb-4">Generate an outline to create your book's pages</p>
+            <button
+              onclick={handleGenerateOutline}
+              disabled={generating || !book.concept}
+              class="btn btn-primary"
+            >
+              {#if generating}
+                <span class="animate-spin">⏳</span> Generating...
+              {:else}
+                ✨ Generate Outline
+              {/if}
+            </button>
+          </div>
+        {:else}
+          {#each pages as pg (pg.id)}
+            <div class="card">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-full bg-spark-100 text-spark-700 flex items-center justify-center font-bold">
+                  {pg.pageNumber}
+                </div>
+
+                <div class="flex-1">
+                  <h3 class="font-medium text-gray-900 mb-1">Page {pg.pageNumber}</h3>
+
+                  {#if pg.outline}
+                    <p class="text-sm text-gray-500 mb-2">{pg.outline}</p>
+                  {/if}
+
+                  {#if pg.text}
+                    <div class="bg-gray-50 rounded-lg p-3 mb-2">
+                      <p class="text-sm text-gray-700">{pg.text}</p>
+                    </div>
+                  {:else}
+                    <button
+                      onclick={() => handleGeneratePageText(pg.id, pg.pageNumber)}
+                      disabled={generatingPageId === pg.id}
+                      class="text-sm text-spark-600 hover:text-spark-700"
+                    >
+                      {#if generatingPageId === pg.id}
+                        ⏳ Generating text...
+                      {:else}
+                        ✨ Generate text
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+
+                <div class="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                  {#if pg.illustrationPath}
+                    <img src={pg.illustrationPath} alt="Page {pg.pageNumber}" class="w-full h-full object-cover" />
+                  {:else}
+                    <div class="w-full h-full flex items-center justify-center text-gray-400">
+                      <button
+                        onclick={() => handleGenerateIllustration(pg.id, pg.pageNumber)}
+                        disabled={generatingPageId === pg.id}
+                        class="text-xs text-center"
+                      >
+                        {#if generatingPageId === pg.id}
+                          ⏳
+                        {:else}
+                          🖼️<br/>Generate
+                        {/if}
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+    {:else if activeTab === 'illustrations'}
+      <div class="card">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Illustrations</h2>
+
+        {#if pages.length === 0}
+          <p class="text-gray-500 text-center py-8">Generate pages first to add illustrations</p>
+        {:else}
+          <div class="grid grid-cols-4 gap-4">
+            {#each pages as pg (pg.id)}
+              <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group">
+                {#if pg.illustrationPath}
+                  <img src={pg.illustrationPath} alt="Page {pg.pageNumber}" class="w-full h-full object-cover" />
+                  <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                      onclick={() => handleGenerateIllustration(pg.id, pg.pageNumber)}
+                      disabled={generatingPageId === pg.id}
+                      class="btn btn-secondary text-sm"
+                    >
+                      🔄 Regenerate
+                    </button>
+                  </div>
+                {:else}
+                  <div class="w-full h-full flex flex-col items-center justify-center text-gray-400 p-2">
+                    <span class="text-2xl mb-1">🖼️</span>
+                    <span class="text-xs text-center">Page {pg.pageNumber}</span>
+                    <button
+                      onclick={() => handleGenerateIllustration(pg.id, pg.pageNumber)}
+                      disabled={generatingPageId === pg.id || !pg.outline}
+                      class="mt-2 text-xs text-spark-600 hover:text-spark-700"
+                    >
+                      {#if generatingPageId === pg.id}
+                        ⏳ Generating...
+                      {:else}
+                        ✨ Generate
+                      {/if}
+                    </button>
+                  </div>
+                {/if}
+                <div class="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
+                  {pg.pageNumber}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+    {:else if activeTab === 'export'}
+      <div class="card">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Export Book</h2>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
+            <div class="text-3xl mb-2">📄</div>
+            <div class="font-medium text-gray-900">Print PDF</div>
+            <div class="text-xs text-gray-500 mt-1">KDP-ready interior</div>
+          </div>
+
+          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
+            <div class="text-3xl mb-2">📱</div>
+            <div class="font-medium text-gray-900">eBook</div>
+            <div class="text-xs text-gray-500 mt-1">EPUB format</div>
+          </div>
+
+          <div class="border rounded-xl p-4 text-center hover:border-spark-300 hover:bg-spark-50 transition-all cursor-pointer">
+            <div class="text-3xl mb-2">🖼️</div>
+            <div class="font-medium text-gray-900">Cover</div>
+            <div class="text-xs text-gray-500 mt-1">Print-ready cover</div>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-6 border-t">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Export History</h3>
+          <p class="text-gray-500 text-sm">No exports yet</p>
+        </div>
+      </div>
+    {/if}
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  {#if showDeleteModal}
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">Delete Book?</h3>
+        <p class="text-gray-600 mb-4">
+          Are you sure you want to delete "{book.title}"? This action cannot be undone.
+        </p>
+        <div class="flex gap-3">
+          <button onclick={() => showDeleteModal = false} class="btn btn-secondary flex-1">
+            Cancel
+          </button>
+          <button onclick={handleDelete} class="btn bg-red-600 text-white hover:bg-red-700 flex-1">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+{/if}

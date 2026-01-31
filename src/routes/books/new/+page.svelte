@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { BOOK_TYPES, AGE_RANGES, TRIM_SIZES, type BookTypeId, type AgeRange } from '$lib/types';
+  import { BOOK_TYPES, AGE_RANGES, type BookTypeId, type AgeRange } from '$lib/types';
+  import { createBook } from '$lib/api/client';
+  import { showError, showSuccess } from '$lib/stores';
 
   const urlParams = $page.url.searchParams;
   let selectedType: BookTypeId = (urlParams.get('type') as BookTypeId) || 'picture';
@@ -14,14 +16,51 @@
     trimSize: '8.5x8.5'
   };
 
+  let submitting = false;
+
   $: bookTypeInfo = BOOK_TYPES[formData.bookType];
   $: availableAges = bookTypeInfo?.ages || [];
   $: availableTrimSizes = bookTypeInfo?.trimSizes || [];
 
+  // Reset age when book type changes if current age isn't available
+  $: if (formData.targetAge && !availableAges.includes(formData.targetAge)) {
+    formData.targetAge = '' as AgeRange;
+  }
+
+  // Set default trim size when book type changes
+  $: if (availableTrimSizes.length && !availableTrimSizes.includes(formData.trimSize)) {
+    formData.trimSize = availableTrimSizes[0];
+  }
+
   async function handleSubmit() {
-    // TODO: Create book via API
-    console.log('Creating book:', formData);
-    // goto(`/books/${newBookId}`);
+    if (!formData.title.trim()) {
+      showError('Please enter a book title');
+      return;
+    }
+    if (!formData.targetAge) {
+      showError('Please select a target age range');
+      return;
+    }
+
+    try {
+      submitting = true;
+      const book = await createBook({
+        title: formData.title.trim(),
+        bookType: formData.bookType,
+        targetAge: formData.targetAge,
+        concept: formData.concept.trim() || null,
+        trimSize: formData.trimSize,
+        pageCount: bookTypeInfo?.pageCount
+      });
+
+      showSuccess('Book created!');
+      goto(`/books/${book.id}`);
+    } catch (err) {
+      console.error('Failed to create book:', err);
+      showError('Failed to create book. Please try again.');
+    } finally {
+      submitting = false;
+    }
   }
 </script>
 
@@ -56,6 +95,10 @@
         {/each}
       </div>
       <p class="mt-3 text-sm text-gray-500">{bookTypeInfo?.description}</p>
+      <div class="mt-2 flex gap-4 text-xs text-gray-400">
+        <span>{bookTypeInfo?.pageCount} pages</span>
+        <span>Ages: {availableAges.map(a => AGE_RANGES[a]?.label.split(' ')[0]).join(', ')}</span>
+      </div>
     </div>
 
     <!-- Basic Info -->
@@ -64,7 +107,7 @@
 
       <div class="space-y-4">
         <div>
-          <label for="title" class="label">Book Title</label>
+          <label for="title" class="label">Book Title <span class="text-red-500">*</span></label>
           <input
             id="title"
             type="text"
@@ -72,12 +115,13 @@
             placeholder="Enter your book title"
             class="input"
             required
+            disabled={submitting}
           />
         </div>
 
         <div>
-          <label for="age" class="label">Target Age</label>
-          <select id="age" bind:value={formData.targetAge} class="input" required>
+          <label for="age" class="label">Target Age <span class="text-red-500">*</span></label>
+          <select id="age" bind:value={formData.targetAge} class="input" required disabled={submitting}>
             <option value="">Select age range</option>
             {#each availableAges as age}
               <option value={age}>{AGE_RANGES[age].label}</option>
@@ -87,7 +131,7 @@
 
         <div>
           <label for="trim" class="label">Trim Size</label>
-          <select id="trim" bind:value={formData.trimSize} class="input">
+          <select id="trim" bind:value={formData.trimSize} class="input" disabled={submitting}>
             {#each availableTrimSizes as size}
               <option value={size}>{size}"</option>
             {/each}
@@ -104,21 +148,34 @@
         <textarea
           id="concept"
           bind:value={formData.concept}
-          placeholder="Describe your book idea, theme, or main characters..."
-          rows="4"
+          placeholder="Describe your book idea, theme, or main characters...
+
+Example: A curious little fox named Finley who discovers that the best adventures are the ones shared with friends. Set in an enchanted forest with talking animals and magical creatures."
+          rows="5"
           class="input resize-none"
+          disabled={submitting}
         ></textarea>
         <p class="mt-2 text-sm text-gray-500">
-          This will be used to help AI generate your story outline and content.
+          This will be used to help AI generate your story outline and content. The more detail you provide, the better!
         </p>
       </div>
     </div>
 
     <!-- Actions -->
     <div class="flex gap-4">
-      <a href="/books" class="btn btn-secondary flex-1">Cancel</a>
-      <button type="submit" class="btn btn-primary flex-1">
-        Create Book
+      <a href="/books" class="btn btn-secondary flex-1" class:pointer-events-none={submitting}>
+        Cancel
+      </a>
+      <button
+        type="submit"
+        class="btn btn-primary flex-1"
+        disabled={submitting || !formData.title.trim() || !formData.targetAge}
+      >
+        {#if submitting}
+          <span class="animate-spin">⏳</span> Creating...
+        {:else}
+          Create Book
+        {/if}
       </button>
     </div>
   </form>
