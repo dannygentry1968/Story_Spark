@@ -9,7 +9,8 @@
     { href: '/series', label: 'Series', icon: '📖' },
     { href: '/characters', label: 'Characters', icon: '👤' },
     { href: '/niche', label: 'Niche Research', icon: '🔍' },
-    { href: '/listing', label: 'Listings', icon: '🏷️' }
+    { href: '/listing', label: 'Listings', icon: '🏷️' },
+    { href: '/settings', label: 'Settings', icon: '⚙️' }
   ];
 
   let { children } = $props();

@@ -3,7 +3,7 @@
  * Provides typed fetch wrappers for all API endpoints
  */
 
-import type { Book, Character, Series, Page, Niche, Listing } from '$lib/db/schema';
+import type { Book, Character, Series, Page, Niche, Listing, Setting } from '$lib/db/schema';
 
 // Base API response type
 interface ApiResponse<T> {
@@ -473,4 +473,42 @@ export async function waitForExport(
   }
 
   throw new Error('Export timed out');
+}
+
+// ============================================================================
+// SETTINGS
+// ============================================================================
+
+export interface SettingItem {
+  key: string;
+  value: string;
+  category: string;
+  isDefault?: boolean;
+  updatedAt?: Date;
+}
+
+export async function getSettings(category?: string): Promise<SettingItem[]> {
+  const query = category ? `?category=${category}` : '';
+  return fetchApi<SettingItem[]>(`/api/settings${query}`);
+}
+
+export async function updateSettings(settings: Record<string, string>): Promise<SettingItem[]> {
+  return fetchApi<SettingItem[]>('/api/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings)
+  });
+}
+
+export async function updateSetting(key: string, value: string): Promise<Setting> {
+  return fetchApi<Setting>('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ key, value })
+  });
+}
+
+export async function testApiConnection(type: 'anthropic' | 'openai', apiKey: string): Promise<{ success: boolean; message: string }> {
+  return fetchApi<{ success: boolean; message: string }>('/api/settings/test', {
+    method: 'POST',
+    body: JSON.stringify({ type, apiKey })
+  });
 }

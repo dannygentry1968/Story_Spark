@@ -194,6 +194,16 @@ export const publishLog = sqliteTable('publish_log', {
 });
 
 // ============================================================================
+// SETTINGS - App configuration and preferences
+// ============================================================================
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value'), // JSON encoded value
+  category: text('category').notNull(), // 'api', 'defaults', 'export', 'ui'
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
+});
+
+// ============================================================================
 // RELATIONS
 // ============================================================================
 export const seriesRelations = relations(series, ({ many }) => ({
@@ -279,3 +289,5 @@ export type Export = typeof exports.$inferSelect;
 export type NewExport = typeof exports.$inferInsert;
 export type PublishLogEntry = typeof publishLog.$inferSelect;
 export type NewPublishLogEntry = typeof publishLog.$inferInsert;
+export type Setting = typeof settings.$inferSelect;
+export type NewSetting = typeof settings.$inferInsert;
