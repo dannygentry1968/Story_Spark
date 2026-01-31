@@ -133,6 +133,7 @@ export const listings = sqliteTable('listings', {
   description: text('description'), // HTML formatted for KDP
   keywords: text('keywords'), // JSON array of 7 keywords
   categories: text('categories'), // JSON array of BISAC codes
+  backCoverText: text('back_cover_text'), // Back cover blurb
 
   // Pricing
   listPrice: real('list_price'),
@@ -153,15 +154,18 @@ export const exports = sqliteTable('exports', {
   bookId: text('book_id').notNull().references(() => books.id, { onDelete: 'cascade' }),
 
   exportType: text('export_type').notNull(), // 'interior', 'cover', 'full'
-  filePath: text('file_path').notNull(),
+  format: text('format').default('pdf'), // export format
+  filePath: text('file_path'), // nullable until export completes
   fileSize: integer('file_size'),
+  status: text('status').default('pending'), // 'pending', 'processing', 'completed', 'failed'
 
   // KDP specs used
   trimSize: text('trim_size'),
   bleed: integer('bleed', { mode: 'boolean' }),
   colorSpace: text('color_space'), // 'RGB', 'CMYK'
 
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' })
 });
 
 // ============================================================================

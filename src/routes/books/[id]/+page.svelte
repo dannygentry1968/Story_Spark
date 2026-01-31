@@ -6,7 +6,8 @@
   import {
     getBook, getBookPages, updateBook, generateOutline, generatePageText,
     generatePageIllustration, deleteBook, createExport, getBookExports,
-    getExportStatus, getExportDownloadUrl, deleteExport
+    getExportStatus, getExportDownloadUrl, deleteExport, generateListingContent,
+    getListings, createListing, updateListing
   } from '$lib/api/client';
   import { showError, showSuccess, showInfo } from '$lib/stores';
   import { TRIM_SIZES } from '$lib/services/pdf-export';
@@ -16,8 +17,9 @@
   let book: any = null;
   let pages: any[] = [];
   let exports: any[] = [];
+  let listings: any[] = [];
   let loading = true;
-  let activeTab: 'overview' | 'pages' | 'illustrations' | 'export' = 'overview';
+  let activeTab: 'overview' | 'pages' | 'illustrations' | 'listing' | 'export' = 'overview';
   let generating = false;
   let generatingPageId: string | null = null;
   let showDeleteModal = false;
@@ -33,6 +35,20 @@
   let currentExportId: string | null = null;
   let exportProgress = 0;
 
+  // Listing state
+  let generatingListing = false;
+  let currentListing: any = null;
+  let editingListing = false;
+  let listingForm = {
+    title: '',
+    subtitle: '',
+    description: '',
+    keywords: [] as string[],
+    categories: [] as string[],
+    backCoverText: ''
+  };
+  let newKeyword = '';
+
   onMount(async () => {
     await loadBook();
   });
@@ -40,16 +56,24 @@
   async function loadBook() {
     try {
       loading = true;
-      const [bookData, pagesData, exportsData] = await Promise.all([
+      const [bookData, pagesData, exportsData, listingsData] = await Promise.all([
         getBook(bookId),
         getBookPages(bookId),
-        getBookExports(bookId).catch(() => [])
+        getBookExports(bookId).catch(() => []),
+        getListings(bookId).catch(() => [])
       ]);
       book = bookData;
       pages = pagesData;
       exports = exportsData;
+      listings = listingsData;
       editedTitle = book.title;
       exportTrimSize = book.trimSize || '8.5x8.5';
+
+      // Load current listing if exists
+      if (listings.length > 0) {
+        currentListing = listings[0];
+        loadListingIntoForm(currentListing);
+      }
     } catch (err) {
       console.error('Failed to load book:', err);
       showError('Failed to load book');
@@ -57,6 +81,96 @@
     } finally {
       loading = false;
     }
+  }
+
+  function loadListingIntoForm(listing: any) {
+    listingForm = {
+      title: listing.title || '',
+      subtitle: listing.subtitle || '',
+      description: listing.description || '',
+      keywords: listing.keywords || [],
+      categories: listing.categories || [],
+      backCoverText: listing.backCoverText || ''
+    };
+  }
+
+  async function handleGenerateListing() {
+    if (!book.concept && !book.outline) {
+      showError('Add a book concept or outline first');
+      return;
+    }
+
+    try {
+      generatingListing = true;
+      showInfo('Generating KDP listing content...');
+
+      const result = await generateListingContent({
+        title: book.title,
+        bookType: book.bookType,
+        targetAge: book.targetAge,
+        storySummary: book.concept || book.outline || '',
+        themes: book.themes || [],
+        characters: book.characters?.map((c: any) => c.name) || []
+      });
+
+      // Update form with generated content
+      listingForm = {
+        title: result.title,
+        subtitle: result.subtitle,
+        description: result.description,
+        keywords: result.keywords,
+        categories: result.categories,
+        backCoverText: result.backCoverText
+      };
+
+      showSuccess('Listing content generated!');
+    } catch (err) {
+      console.error('Failed to generate listing:', err);
+      showError('Failed to generate listing');
+    } finally {
+      generatingListing = false;
+    }
+  }
+
+  async function handleSaveListing() {
+    try {
+      const listingData = {
+        bookId: book.id,
+        ...listingForm,
+        status: 'draft'
+      };
+
+      if (currentListing) {
+        const updated = await updateListing(currentListing.id, listingData);
+        currentListing = updated;
+        showSuccess('Listing saved!');
+      } else {
+        const created = await createListing(listingData);
+        currentListing = created;
+        listings = [created, ...listings];
+        showSuccess('Listing created!');
+      }
+      editingListing = false;
+    } catch (err) {
+      console.error('Failed to save listing:', err);
+      showError('Failed to save listing');
+    }
+  }
+
+  function addKeyword() {
+    if (newKeyword.trim() && listingForm.keywords.length < 7) {
+      listingForm.keywords = [...listingForm.keywords, newKeyword.trim()];
+      newKeyword = '';
+    }
+  }
+
+  function removeKeyword(index: number) {
+    listingForm.keywords = listingForm.keywords.filter((_, i) => i !== index);
+  }
+
+  function copyToClipboard(text: string, label: string) {
+    navigator.clipboard.writeText(text);
+    showSuccess(`${label} copied to clipboard!`);
   }
 
   async function handleExport() {
@@ -337,7 +451,7 @@
     <!-- Tabs -->
     <div class="border-b border-gray-200 mb-6">
       <nav class="flex gap-6">
-        {#each ['overview', 'pages', 'illustrations', 'export'] as tab}
+        {#each ['overview', 'pages', 'illustrations', 'listing', 'export'] as tab}
           <button
             onclick={() => activeTab = tab as typeof activeTab}
             class="py-3 text-sm font-medium border-b-2 transition-colors
@@ -542,6 +656,244 @@
             {/each}
           </div>
         {/if}
+      </div>
+
+    {:else if activeTab === 'listing'}
+      <div class="grid grid-cols-3 gap-6">
+        <!-- Listing Form -->
+        <div class="col-span-2 space-y-4">
+          <!-- Generate Button -->
+          <div class="card">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-lg font-semibold text-gray-900">KDP Listing Content</h2>
+                <p class="text-sm text-gray-500">AI-generated Amazon listing optimized for discoverability</p>
+              </div>
+              <button
+                onclick={handleGenerateListing}
+                disabled={generatingListing}
+                class="btn btn-primary"
+              >
+                {#if generatingListing}
+                  <span class="animate-spin">⏳</span> Generating...
+                {:else}
+                  ✨ Generate Listing
+                {/if}
+              </button>
+            </div>
+          </div>
+
+          <!-- Title & Subtitle -->
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-gray-900">Title & Subtitle</h3>
+              {#if listingForm.title}
+                <button
+                  onclick={() => copyToClipboard(`${listingForm.title}${listingForm.subtitle ? ': ' + listingForm.subtitle : ''}`, 'Title')}
+                  class="text-xs text-spark-600 hover:text-spark-700"
+                >
+                  📋 Copy
+                </button>
+              {/if}
+            </div>
+            <div class="space-y-3">
+              <div>
+                <label for="listingTitle" class="label">Title (max 200 chars)</label>
+                <input
+                  id="listingTitle"
+                  type="text"
+                  bind:value={listingForm.title}
+                  maxlength="200"
+                  class="input"
+                  placeholder="Your book title for Amazon"
+                />
+                <div class="text-xs text-gray-400 mt-1">{listingForm.title.length}/200</div>
+              </div>
+              <div>
+                <label for="listingSubtitle" class="label">Subtitle (optional)</label>
+                <input
+                  id="listingSubtitle"
+                  type="text"
+                  bind:value={listingForm.subtitle}
+                  class="input"
+                  placeholder="A subtitle for your book"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Description -->
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-gray-900">Book Description</h3>
+              {#if listingForm.description}
+                <button
+                  onclick={() => copyToClipboard(listingForm.description, 'Description')}
+                  class="text-xs text-spark-600 hover:text-spark-700"
+                >
+                  📋 Copy
+                </button>
+              {/if}
+            </div>
+            <textarea
+              bind:value={listingForm.description}
+              rows="8"
+              class="input"
+              placeholder="Write a compelling description for your book..."
+            ></textarea>
+            <div class="text-xs text-gray-400 mt-1">{listingForm.description.length}/4000 characters (Amazon max)</div>
+          </div>
+
+          <!-- Keywords -->
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-gray-900">Keywords ({listingForm.keywords.length}/7)</h3>
+              {#if listingForm.keywords.length > 0}
+                <button
+                  onclick={() => copyToClipboard(listingForm.keywords.join(', '), 'Keywords')}
+                  class="text-xs text-spark-600 hover:text-spark-700"
+                >
+                  📋 Copy All
+                </button>
+              {/if}
+            </div>
+            <p class="text-sm text-gray-500 mb-3">Amazon allows up to 7 keywords/phrases to help readers find your book</p>
+
+            <div class="flex gap-2 mb-3">
+              <input
+                type="text"
+                bind:value={newKeyword}
+                placeholder="Add a keyword..."
+                class="input flex-1"
+                onkeydown={(e) => e.key === 'Enter' && addKeyword()}
+                disabled={listingForm.keywords.length >= 7}
+              />
+              <button
+                onclick={addKeyword}
+                disabled={!newKeyword.trim() || listingForm.keywords.length >= 7}
+                class="btn btn-secondary"
+              >
+                + Add
+              </button>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              {#each listingForm.keywords as keyword, i}
+                <span class="inline-flex items-center gap-1 px-3 py-1 bg-spark-100 text-spark-700 rounded-full text-sm">
+                  {keyword}
+                  <button
+                    onclick={() => removeKeyword(i)}
+                    class="text-spark-500 hover:text-spark-700 ml-1"
+                  >
+                    ×
+                  </button>
+                </span>
+              {/each}
+              {#if listingForm.keywords.length === 0}
+                <span class="text-sm text-gray-400 italic">No keywords added yet</span>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Back Cover Text -->
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-medium text-gray-900">Back Cover Text</h3>
+              {#if listingForm.backCoverText}
+                <button
+                  onclick={() => copyToClipboard(listingForm.backCoverText, 'Back cover text')}
+                  class="text-xs text-spark-600 hover:text-spark-700"
+                >
+                  📋 Copy
+                </button>
+              {/if}
+            </div>
+            <textarea
+              bind:value={listingForm.backCoverText}
+              rows="4"
+              class="input"
+              placeholder="Short teaser text for the back cover..."
+            ></textarea>
+          </div>
+
+          <!-- Save Button -->
+          <div class="flex justify-end">
+            <button
+              onclick={handleSaveListing}
+              disabled={!listingForm.title}
+              class="btn btn-primary"
+            >
+              💾 Save Listing
+            </button>
+          </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-4">
+          <!-- Categories -->
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Suggested Categories</h3>
+            {#if listingForm.categories.length > 0}
+              <ul class="space-y-2 text-sm">
+                {#each listingForm.categories as category}
+                  <li class="flex items-start gap-2">
+                    <span class="text-spark-500">📂</span>
+                    <span class="text-gray-600">{category}</span>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="text-sm text-gray-400 italic">Generate a listing to see suggested categories</p>
+            {/if}
+          </div>
+
+          <!-- Tips -->
+          <div class="card bg-amber-50 border-amber-200">
+            <h3 class="text-sm font-medium text-amber-800 mb-2">💡 KDP Listing Tips</h3>
+            <ul class="text-xs text-amber-700 space-y-1">
+              <li>• Use all 7 keyword slots for best discoverability</li>
+              <li>• Front-load important words in your title</li>
+              <li>• Description should hook readers in first 200 chars</li>
+              <li>• Include age range in keywords (e.g., "ages 3-5")</li>
+              <li>• Research competitor keywords before finalizing</li>
+            </ul>
+          </div>
+
+          <!-- Listing Status -->
+          <div class="card">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Listing Status</h3>
+            {#if currentListing}
+              <div class="flex items-center gap-2 text-sm">
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                <span class="text-gray-600">Saved</span>
+              </div>
+              <div class="text-xs text-gray-400 mt-1">
+                Last updated: {new Date(currentListing.updatedAt || currentListing.createdAt).toLocaleDateString()}
+              </div>
+            {:else}
+              <div class="flex items-center gap-2 text-sm">
+                <span class="w-2 h-2 rounded-full bg-gray-300"></span>
+                <span class="text-gray-500">Not created</span>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Quick Copy All -->
+          {#if listingForm.title && listingForm.description}
+            <div class="card bg-spark-50 border-spark-200">
+              <h3 class="text-sm font-medium text-spark-800 mb-2">Quick Export</h3>
+              <button
+                onclick={() => copyToClipboard(
+                  `TITLE: ${listingForm.title}\n\nSUBTITLE: ${listingForm.subtitle || 'N/A'}\n\nDESCRIPTION:\n${listingForm.description}\n\nKEYWORDS: ${listingForm.keywords.join(', ')}\n\nBACK COVER:\n${listingForm.backCoverText}`,
+                  'All listing content'
+                )}
+                class="btn btn-secondary w-full text-sm"
+              >
+                📋 Copy All Content
+              </button>
+            </div>
+          {/if}
+        </div>
       </div>
 
     {:else if activeTab === 'export'}

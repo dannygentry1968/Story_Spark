@@ -65,6 +65,7 @@ export const POST: RequestHandler = async ({ request }) => {
       description: body.description || null,
       keywords: body.keywords || null,
       categories: body.categories || null,
+      backCoverText: body.backCoverText || null,
       listPrice: body.listPrice || null,
       currency: body.currency || 'USD',
       status: body.status || 'draft',
