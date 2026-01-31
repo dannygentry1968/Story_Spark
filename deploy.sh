@@ -1,68 +1,165 @@
 #!/bin/bash
-
-# StorySpark v3 - Deployment Script for Hostinger VPS with Docker
-# Usage: ./deploy.sh [environment]
+# StorySpark Deployment Script
+# Usage: ./deploy.sh [command]
 
 set -e
 
-ENVIRONMENT="${1:-production}"
-IMAGE_NAME="storyspark"
-CONTAINER_NAME="storyspark"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-echo "🚀 StorySpark v3 Deployment"
-echo "Environment: $ENVIRONMENT"
-echo "================================"
+# Functions
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-# Check for required environment variables
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "⚠️  Warning: ANTHROPIC_API_KEY not set"
-fi
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
 
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo "⚠️  Warning: OPENAI_API_KEY not set"
-fi
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-# Pull latest code (if using git)
-if [ -d ".git" ]; then
-    echo "📥 Pulling latest code..."
+# Check if .env exists
+check_env() {
+    if [ ! -f .env ]; then
+        log_error ".env file not found!"
+        log_info "Creating from .env.example..."
+        cp .env.example .env
+        log_warn "Please edit .env with your API keys and domain before deploying."
+        exit 1
+    fi
+}
+
+# Deploy command
+deploy() {
+    log_info "Starting StorySpark deployment..."
+    check_env
+    
+    log_info "Building Docker image..."
+    docker-compose build
+    
+    log_info "Starting containers..."
+    docker-compose up -d
+    
+    log_info "Waiting for health check..."
+    sleep 5
+    
+    if curl -s http://localhost:3000/api/health > /dev/null; then
+        log_info "✅ StorySpark is running!"
+        log_info "Access at: http://localhost:3000"
+    else
+        log_error "Health check failed. Check logs with: docker-compose logs"
+        exit 1
+    fi
+}
+
+# Update command
+update() {
+    log_info "Updating StorySpark..."
+    
+    log_info "Pulling latest changes..."
     git pull origin main
-fi
+    
+    log_info "Rebuilding containers..."
+    docker-compose down
+    docker-compose up -d --build
+    
+    log_info "✅ Update complete!"
+}
 
-# Build the Docker image
-echo "🔨 Building Docker image..."
-docker build -t $IMAGE_NAME:latest .
+# Stop command
+stop() {
+    log_info "Stopping StorySpark..."
+    docker-compose down
+    log_info "✅ Stopped"
+}
 
-# Stop existing container if running
-echo "🛑 Stopping existing container..."
-docker stop $CONTAINER_NAME 2>/dev/null || true
-docker rm $CONTAINER_NAME 2>/dev/null || true
+# Restart command
+restart() {
+    log_info "Restarting StorySpark..."
+    docker-compose restart
+    log_info "✅ Restarted"
+}
 
-# Run the new container
-echo "▶️  Starting new container..."
-docker run -d \
-    --name $CONTAINER_NAME \
-    --restart unless-stopped \
-    -p 3000:3000 \
-    -e NODE_ENV=production \
-    -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-    -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-    -v storyspark-data:/app/data \
-    $IMAGE_NAME:latest
+# Logs command
+logs() {
+    docker-compose logs -f storyspark
+}
 
-# Wait for health check
-echo "⏳ Waiting for health check..."
-sleep 5
-
-# Check if container is healthy
-if docker ps | grep -q $CONTAINER_NAME; then
-    echo "✅ Deployment successful!"
+# Status command
+status() {
+    docker-compose ps
     echo ""
-    echo "Container status:"
-    docker ps --filter name=$CONTAINER_NAME
+    log_info "Health check:"
+    curl -s http://localhost:3000/api/health | python3 -m json.tool 2>/dev/null || curl -s http://localhost:3000/api/health
+}
+
+# Backup command
+backup() {
+    BACKUP_DIR="${1:-/backups/storyspark}"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    
+    log_info "Creating backup in $BACKUP_DIR..."
+    mkdir -p "$BACKUP_DIR"
+    
+    docker run --rm \
+        -v storyspark-data:/data \
+        -v "$BACKUP_DIR":/backup \
+        alpine tar czf "/backup/storyspark-backup-$TIMESTAMP.tar.gz" -C /data .
+    
+    log_info "✅ Backup created: $BACKUP_DIR/storyspark-backup-$TIMESTAMP.tar.gz"
+}
+
+# Help command
+help() {
+    echo "StorySpark Deployment Script"
     echo ""
-    echo "View logs: docker logs -f $CONTAINER_NAME"
-else
-    echo "❌ Deployment failed. Check logs:"
-    docker logs $CONTAINER_NAME
-    exit 1
-fi
+    echo "Usage: ./deploy.sh [command]"
+    echo ""
+    echo "Commands:"
+    echo "  deploy    Build and start the application"
+    echo "  update    Pull latest changes and rebuild"
+    echo "  stop      Stop the application"
+    echo "  restart   Restart the application"
+    echo "  logs      View application logs"
+    echo "  status    Show container status and health"
+    echo "  backup    Create a backup of the database"
+    echo "  help      Show this help message"
+}
+
+# Main
+case "${1:-deploy}" in
+    deploy)
+        deploy
+        ;;
+    update)
+        update
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    logs)
+        logs
+        ;;
+    status)
+        status
+        ;;
+    backup)
+        backup "$2"
+        ;;
+    help|--help|-h)
+        help
+        ;;
+    *)
+        log_error "Unknown command: $1"
+        help
+        exit 1
+        ;;
+esac
