@@ -546,3 +546,56 @@ export async function testApiConnection(type: 'anthropic' | 'openai', apiKey: st
     body: JSON.stringify({ type, apiKey })
   });
 }
+
+// ============================================================================
+// NICHE RESEARCH
+// ============================================================================
+
+export interface TrendData {
+  topic: string;
+  trendLevel: 'rising' | 'stable' | 'declining';
+  popularity: number;
+  seasonality?: string;
+  notes: string;
+}
+
+export interface CompetitionData {
+  level: 'low' | 'medium' | 'high';
+  estimatedBooks: string;
+  topCompetitors: string[];
+  marketGaps: string[];
+  difficulty: number;
+  recommendations: string[];
+}
+
+export interface BookIdeaData {
+  title: string;
+  concept: string;
+  targetAge: string;
+  uniqueAngle: string;
+  estimatedDemand: 'low' | 'medium' | 'high';
+  keywords: string[];
+}
+
+export interface NicheAnalysisResponse {
+  query: string;
+  analysisType: string;
+  trends?: TrendData[];
+  competition?: CompetitionData;
+  bookIdeas?: BookIdeaData[];
+  summary: string;
+  opportunityScore: number;
+  recommendations: string[];
+}
+
+export async function analyzeNiche(data: {
+  query: string;
+  analysisType: 'trends' | 'competition' | 'ideas' | 'full';
+  category?: string;
+  targetAge?: string;
+}): Promise<NicheAnalysisResponse> {
+  return fetchApi<NicheAnalysisResponse>('/api/generate/niche-analysis', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
