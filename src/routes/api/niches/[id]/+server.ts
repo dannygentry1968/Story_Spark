@@ -16,7 +16,14 @@ export const GET: RequestHandler = async ({ params }) => {
       return failure('Niche not found', 404);
     }
 
-    return success(result[0]);
+    // Parse JSON arrays from TEXT fields
+    const niche = {
+      ...result[0],
+      keywords: result[0].keywords ? JSON.parse(result[0].keywords) : null,
+      bookIdeas: result[0].bookIdeas ? JSON.parse(result[0].bookIdeas) : null
+    };
+
+    return success(niche);
   } catch (err) {
     console.error('Error fetching niche:', err);
     return failure('Failed to fetch niche', 500);
@@ -44,6 +51,13 @@ export const PUT: RequestHandler = async ({ params, request }) => {
       ...body,
       updatedAt: now()
     };
+    // Arrays must be JSON-serialized for SQLite TEXT fields
+    if (body.keywords !== undefined) {
+      (updateData as any).keywords = body.keywords ? JSON.stringify(body.keywords) : null;
+    }
+    if (body.bookIdeas !== undefined) {
+      (updateData as any).bookIdeas = body.bookIdeas ? JSON.stringify(body.bookIdeas) : null;
+    }
     delete (updateData as any).id;
     delete (updateData as any).createdAt;
 
@@ -51,7 +65,14 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
     const updated = await db.select().from(niches).where(eq(niches.id, params.id)).limit(1);
 
-    return success(updated[0]);
+    // Parse JSON arrays from TEXT fields
+    const niche = {
+      ...updated[0],
+      keywords: updated[0].keywords ? JSON.parse(updated[0].keywords) : null,
+      bookIdeas: updated[0].bookIdeas ? JSON.parse(updated[0].bookIdeas) : null
+    };
+
+    return success(niche);
   } catch (err) {
     console.error('Error updating niche:', err);
     return failure('Failed to update niche', 500);

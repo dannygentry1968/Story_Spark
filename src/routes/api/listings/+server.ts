@@ -24,7 +24,14 @@ export const GET: RequestHandler = async ({ url }) => {
       allListings = allListings.filter(l => l.bookId === bookId);
     }
 
-    return success(allListings);
+    // Parse JSON arrays from TEXT fields
+    const parsed = allListings.map(l => ({
+      ...l,
+      keywords: l.keywords ? JSON.parse(l.keywords) : null,
+      categories: l.categories ? JSON.parse(l.categories) : null
+    }));
+
+    return success(parsed);
   } catch (err) {
     console.error('Error fetching listings:', err);
     return failure('Failed to fetch listings', 500);
@@ -63,8 +70,9 @@ export const POST: RequestHandler = async ({ request }) => {
       title: body.title!,
       subtitle: body.subtitle || null,
       description: body.description || null,
-      keywords: body.keywords || null,
-      categories: body.categories || null,
+      // Arrays must be JSON-serialized for SQLite TEXT fields
+      keywords: body.keywords ? JSON.stringify(body.keywords) : null,
+      categories: body.categories ? JSON.stringify(body.categories) : null,
       backCoverText: body.backCoverText || null,
       listPrice: body.listPrice || null,
       currency: body.currency || 'USD',

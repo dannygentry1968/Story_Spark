@@ -22,8 +22,10 @@ export const GET: RequestHandler = async ({ params }) => {
     // Get characters in this series
     const seriesCharacters = await db.select().from(characters).where(eq(characters.seriesId, params.id));
 
+    // Parse JSON arrays from TEXT fields
     return success({
       ...seriesResult[0],
+      keywords: seriesResult[0].keywords ? JSON.parse(seriesResult[0].keywords) : null,
       books: seriesBooks,
       characters: seriesCharacters
     });
@@ -54,6 +56,10 @@ export const PUT: RequestHandler = async ({ params, request }) => {
       ...body,
       updatedAt: now()
     };
+    // Arrays must be JSON-serialized for SQLite TEXT fields
+    if (body.keywords !== undefined) {
+      (updateData as any).keywords = body.keywords ? JSON.stringify(body.keywords) : null;
+    }
     delete (updateData as any).id;
     delete (updateData as any).createdAt;
 
@@ -61,7 +67,13 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
     const updated = await db.select().from(series).where(eq(series.id, params.id)).limit(1);
 
-    return success(updated[0]);
+    // Parse JSON arrays from TEXT fields
+    const seriesData = {
+      ...updated[0],
+      keywords: updated[0].keywords ? JSON.parse(updated[0].keywords) : null
+    };
+
+    return success(seriesData);
   } catch (err) {
     console.error('Error updating series:', err);
     return failure('Failed to update series', 500);

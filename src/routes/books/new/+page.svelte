@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { BOOK_TYPES, AGE_RANGES } from '$lib/types';
   import { TRIM_SIZES } from '$lib/services/pdf-export';
@@ -51,6 +52,18 @@
 
   onMount(async () => {
     try {
+      // Read URL parameters to populate form (from Niche Research suggestions)
+      const urlParams = $page.url.searchParams;
+      const urlTitle = urlParams.get('title');
+      const urlConcept = urlParams.get('concept');
+
+      if (urlTitle) {
+        bookData.title = urlTitle;
+      }
+      if (urlConcept) {
+        bookData.concept = urlConcept;
+      }
+
       const [seriesData, charactersData] = await Promise.all([
         getAllSeries().catch(() => []),
         getCharacters().catch(() => [])
@@ -164,8 +177,13 @@
       });
 
       // Parse the outline into pages
-      bookData.outline = result.summary || '';
-      bookData.pages = result.pages || [];
+      // Claude returns 'logline' for the summary
+      bookData.outline = result.logline || result.summary || '';
+      // Map Claude's page structure (summary field) to our structure (outline field)
+      bookData.pages = (result.pages || []).map(p => ({
+        pageNumber: p.pageNumber,
+        outline: p.summary || p.outline || p.text || ''
+      }));
 
       showSuccess('Outline generated!');
     } catch (err) {
@@ -196,6 +214,23 @@
         outline: bookData.outline,
         status: 'draft'
       });
+
+      // If we have pages from the outline, save them to the book
+      if (bookData.pages.length > 0) {
+        try {
+          const { updateBookPages } = await import('$lib/api/client');
+          await updateBookPages(newBook.id, bookData.pages.map(p => ({
+            pageNumber: p.pageNumber,
+            pageType: 'content',
+            illustrationPrompt: p.outline, // Use outline as illustration prompt
+            text: null,
+            layout: 'text_bottom'
+          })));
+        } catch (pageErr) {
+          console.error('Failed to save pages:', pageErr);
+          // Continue anyway - book was created
+        }
+      }
 
       showSuccess('Book created successfully!');
       goto(\`/books/\${newBook.id}\`);

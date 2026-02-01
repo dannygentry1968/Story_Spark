@@ -19,7 +19,14 @@ export const GET: RequestHandler = async ({ url }) => {
       .limit(limit)
       .offset(offset);
 
-    return success(allNiches);
+    // Parse JSON arrays from TEXT fields
+    const parsed = allNiches.map(n => ({
+      ...n,
+      keywords: n.keywords ? JSON.parse(n.keywords) : null,
+      bookIdeas: n.bookIdeas ? JSON.parse(n.bookIdeas) : null
+    }));
+
+    return success(parsed);
   } catch (err) {
     console.error('Error fetching niches:', err);
     return failure('Failed to fetch niches', 500);
@@ -49,11 +56,12 @@ export const POST: RequestHandler = async ({ request }) => {
       id,
       name: body.name!,
       category: body.category || null,
-      keywords: body.keywords || null,
+      // Arrays must be JSON-serialized for SQLite TEXT fields
+      keywords: body.keywords ? JSON.stringify(body.keywords) : null,
       competitionLevel: body.competitionLevel || null,
       demandLevel: body.demandLevel || null,
       notes: body.notes || null,
-      bookIdeas: body.bookIdeas || null,
+      bookIdeas: body.bookIdeas ? JSON.stringify(body.bookIdeas) : null,
       researched: body.researched || false,
       createdAt: timestamp,
       updatedAt: timestamp

@@ -19,7 +19,13 @@ export const GET: RequestHandler = async ({ url }) => {
       .limit(limit)
       .offset(offset);
 
-    return success(allSeries);
+    // Parse JSON arrays from TEXT fields
+    const parsed = allSeries.map(s => ({
+      ...s,
+      keywords: s.keywords ? JSON.parse(s.keywords) : null
+    }));
+
+    return success(parsed);
   } catch (err) {
     console.error('Error fetching series:', err);
     return failure('Failed to fetch series', 500);
@@ -51,7 +57,8 @@ export const POST: RequestHandler = async ({ request }) => {
       description: body.description || null,
       targetAge: body.targetAge || null,
       genre: body.genre || null,
-      keywords: body.keywords || null,
+      // Arrays must be JSON-serialized for SQLite TEXT fields
+      keywords: body.keywords ? JSON.stringify(body.keywords) : null,
       createdAt: timestamp,
       updatedAt: timestamp
     };
