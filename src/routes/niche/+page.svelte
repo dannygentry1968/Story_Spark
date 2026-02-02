@@ -570,6 +570,7 @@
       {:else}
         <div class="space-y-4">
           {#each niches as niche (niche.id)}
+            {@const opportunity = getOpportunityScore(niche)}
             <div
               class="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
               onclick={() => openDetailModal(niche)}
@@ -588,7 +589,6 @@
                   <span class="px-2 py-1 {getCompetitionColor(niche.competitionLevel)} text-xs rounded-full">
                     {niche.competitionLevel} competition
                   </span>
-                  {@const opportunity = getOpportunityScore(niche)}
                   <span class="text-sm font-medium {opportunity.color}">
                     {opportunity.score}
                   </span>
