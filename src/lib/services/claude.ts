@@ -16,6 +16,11 @@ function getClient(): Anthropic {
   return client;
 }
 
+// Export for direct access to Claude client
+export function getClaude(): Anthropic {
+  return getClient();
+}
+
 // ============================================================================
 // STORY OUTLINE GENERATION
 // ============================================================================
