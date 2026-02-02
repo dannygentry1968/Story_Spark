@@ -707,6 +707,7 @@
 
 <!-- Niche Detail Modal -->
 {#if showDetailModal && selectedNiche}
+  {@const detailOpp = getOpportunityScore(selectedNiche)}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
       <div class="flex items-start justify-between mb-4">
@@ -737,8 +738,7 @@
           </div>
           <div class="flex-1 p-3 bg-gray-50 rounded-lg text-center">
             <div class="text-sm text-gray-500 mb-1">Opportunity</div>
-            {@const opp = getOpportunityScore(selectedNiche)}
-            <span class="text-sm font-bold {opp.color}">{opp.score}</span>
+            <span class="text-sm font-bold {detailOpp.color}">{detailOpp.score}</span>
           </div>
         </div>
 
