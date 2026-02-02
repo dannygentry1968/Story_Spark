@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
+import { getDb } from '$lib/db';
 import { exports as exportsTable } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import * as fs from 'fs/promises';
@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ params }) => {
   try {
     const { id } = params;
 
-    const [exportRecord] = await db
+    const [exportRecord] = await getDb()
       .select()
       .from(exportsTable)
       .where(eq(exportsTable.id, id));
@@ -45,7 +45,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
   try {
     const { id } = params;
 
-    const [exportRecord] = await db
+    const [exportRecord] = await getDb()
       .select()
       .from(exportsTable)
       .where(eq(exportsTable.id, id));
@@ -64,7 +64,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
     }
 
     // Delete the record
-    await db.delete(exportsTable).where(eq(exportsTable.id, id));
+    await getDb().delete(exportsTable).where(eq(exportsTable.id, id));
 
     return json({ success: true });
   } catch (err) {

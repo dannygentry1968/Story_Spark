@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
+import { getDb } from '$lib/db';
 import { exports as exportsTable, books } from '$lib/db/schema';
 import { eq } from 'drizzle-orm';
 import * as fs from 'fs/promises';
@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ params }) => {
     const { id } = params;
 
     // Get export record
-    const [exportRecord] = await db
+    const [exportRecord] = await getDb()
       .select()
       .from(exportsTable)
       .where(eq(exportsTable.id, id));
@@ -40,7 +40,7 @@ export const GET: RequestHandler = async ({ params }) => {
     }
 
     // Get book name for filename
-    const [book] = await db
+    const [book] = await getDb()
       .select()
       .from(books)
       .where(eq(books.id, exportRecord.bookId));

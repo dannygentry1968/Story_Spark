@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/db';
+import { getDb } from '$lib/db';
 import { books, pages, exports as exportsTable } from '$lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
@@ -38,7 +38,7 @@ export const GET: RequestHandler = async ({ url }) => {
       return json({ error: 'Book ID required' }, { status: 400 });
     }
 
-    const exportsList = await db
+    const exportsList = await getDb()
       .select()
       .from(exportsTable)
       .where(eq(exportsTable.bookId, bookId))
@@ -72,13 +72,13 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     // Get book data
-    const [book] = await db.select().from(books).where(eq(books.id, bookId));
+    const [book] = await getDb().select().from(books).where(eq(books.id, bookId));
     if (!book) {
       return json({ error: 'Book not found' }, { status: 404 });
     }
 
     // Get book pages
-    const bookPages = await db
+    const bookPages = await getDb()
       .select()
       .from(pages)
       .where(eq(pages.bookId, bookId))
@@ -151,7 +151,7 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     // Create export record in pending state
-    const [exportRecord] = await db.insert(exportsTable).values({
+    const [exportRecord] = await getDb().insert(exportsTable).values({
       id: exportId,
       bookId,
       format: 'pdf',
@@ -180,7 +180,7 @@ export const POST: RequestHandler = async ({ request }) => {
 async function generatePdfAsync(exportId: string, config: any) {
   try {
     // Update status to processing
-    await db
+    await getDb()
       .update(exportsTable)
       .set({ status: 'processing' })
       .where(eq(exportsTable.id, exportId));
@@ -235,7 +235,7 @@ async function generatePdfAsync(exportId: string, config: any) {
     }
 
     // Update export record as completed
-    await db
+    await getDb()
       .update(exportsTable)
       .set({
         status: 'completed',
@@ -249,7 +249,7 @@ async function generatePdfAsync(exportId: string, config: any) {
     console.error(`Export ${exportId} failed:`, err);
 
     // Update export record as failed
-    await db
+    await getDb()
       .update(exportsTable)
       .set({
         status: 'failed',
