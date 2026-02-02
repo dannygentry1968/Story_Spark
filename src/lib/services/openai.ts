@@ -33,11 +33,13 @@ async function ensureStorageDir(subdir: string): Promise<string> {
 // IMAGE GENERATION TYPES
 // ============================================================================
 
+// GPT Image model parameters (gpt-image-1, gpt-image-1.5)
+// Note: 'style' parameter is NOT supported for gpt-image models (only dall-e-3)
 export interface ImageGenerationRequest {
   prompt: string;
-  style?: 'natural' | 'vivid';
-  size?: '1024x1024' | '1792x1024' | '1024x1792';
-  quality?: 'standard' | 'hd';
+  size?: '1024x1024' | '1536x1024' | '1024x1536' | 'auto';
+  quality?: 'low' | 'medium' | 'high';
+  outputFormat?: 'png' | 'jpeg' | 'webp';
 }
 
 export interface ImageResult {
@@ -50,19 +52,19 @@ export interface CharacterReferenceRequest {
   characterId: string;
   name: string;
   visualDescription: string;
-  style: string;
+  style: string; // This is an art style description, NOT the API 'style' parameter
 }
 
 export interface PageIllustrationRequest {
   bookId: string;
   pageNumber: number;
   prompt: string;
-  style: string;
+  style: string; // Art style description for the prompt
   characterReferences?: {
     name: string;
     imagePath: string;
   }[];
-  size?: '1024x1024' | '1792x1024' | '1024x1792';
+  size?: '1024x1024' | '1536x1024' | '1024x1536';
 }
 
 // ============================================================================
@@ -72,13 +74,14 @@ export interface PageIllustrationRequest {
 export async function generateImage(request: ImageGenerationRequest): Promise<ImageResult> {
   const openai = getClient();
 
+  // Use gpt-image-1.5 (latest model as of Dec 2025)
+  // Note: 'style' parameter is NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1',
+    model: 'gpt-image-1.5',
     prompt: request.prompt,
     n: 1,
     size: request.size || '1024x1024',
-    style: request.style || 'vivid',
-    quality: request.quality || 'hd'
+    quality: request.quality || 'high'
   });
 
   const imageData = response.data[0];
@@ -116,24 +119,25 @@ export async function generateCharacterReference(
   const openai = getClient();
 
   // Build a comprehensive prompt for character reference
+  // Include the art style in the prompt text itself (not as API parameter)
   const prompt = `Create a character reference sheet for a children's book character:
 
 Character: ${request.name}
 Visual Description: ${request.visualDescription}
 
-Style: ${request.style}, suitable for children's book illustration
+Art Style: ${request.style}, suitable for children's book illustration
 
 Show the character in a clear, front-facing pose with a simple background. The image should serve as a reference for maintaining character consistency across multiple illustrations. Include clear details of their appearance, colors, and any distinctive features.
 
 High quality, professional children's book illustration style.`;
 
+  // Note: 'style' parameter removed - NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1',
+    model: 'gpt-image-1.5',
     prompt,
     n: 1,
     size: '1024x1024',
-    style: 'vivid',
-    quality: 'hd'
+    quality: 'high'
   });
 
   const imageData = response.data[0];
@@ -167,6 +171,7 @@ export async function generatePageIllustration(
   const openai = getClient();
 
   // Build prompt with character context
+  // Art style goes into the prompt text, not as an API parameter
   let prompt = request.prompt;
 
   // If we have character references, include them in the prompt context
@@ -180,24 +185,20 @@ export async function generatePageIllustration(
 Characters in this scene should match their reference images exactly:
 ${characterDescriptions}
 
-Style: ${request.style}, children's book illustration, consistent with character reference sheets.`;
+Art Style: ${request.style}, children's book illustration, consistent with character reference sheets.`;
   } else {
     prompt = `${request.prompt}
 
-Style: ${request.style}, professional children's book illustration.`;
+Art Style: ${request.style}, professional children's book illustration.`;
   }
 
-  // Note: For true character consistency, OpenAI's API supports reference images
-  // through the "image" parameter in edit mode. For now, we use detailed prompts.
-  // In production, you'd use the Responses API for multi-turn editing with references.
-
+  // Note: 'style' parameter removed - NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1',
+    model: 'gpt-image-1.5',
     prompt,
     n: 1,
     size: request.size || '1024x1024',
-    style: 'vivid',
-    quality: 'hd'
+    quality: 'high'
   });
 
   const imageData = response.data[0];
@@ -229,7 +230,7 @@ export interface CoverRequest {
   bookId: string;
   title: string;
   subtitle?: string;
-  style: string;
+  style: string; // Art style description for the prompt
   mainCharacter?: {
     name: string;
     visualDescription: string;
@@ -249,7 +250,7 @@ ${request.mainCharacter ? `Main character: ${request.mainCharacter.name} - ${req
 ${request.scene ? `Scene: ${request.scene}` : ''}
 ${request.mood ? `Mood: ${request.mood}` : ''}
 
-Style: ${request.style}, professional children's book cover art
+Art Style: ${request.style}, professional children's book cover art
 
 Requirements:
 - Eye-catching composition that works as a book cover
@@ -258,13 +259,14 @@ Requirements:
 - High quality, print-ready illustration
 - Portrait orientation suitable for book cover`;
 
+  // Note: 'style' parameter removed - NOT supported for gpt-image models
+  // Size updated to valid gpt-image dimensions (1024x1536 for portrait)
   const response = await openai.images.generate({
-    model: 'gpt-image-1',
+    model: 'gpt-image-1.5',
     prompt,
     n: 1,
-    size: '1024x1792', // Portrait for book cover
-    style: 'vivid',
-    quality: 'hd'
+    size: '1024x1536', // Portrait for book cover (corrected from invalid 1024x1792)
+    quality: 'high'
   });
 
   const imageData = response.data[0];
@@ -306,7 +308,7 @@ export async function editImage(request: ImageEditRequest): Promise<ImageResult>
 
   // Create edit request
   const response = await openai.images.edit({
-    model: 'gpt-image-1',
+    model: 'gpt-image-1.5',
     image: imageFile,
     prompt: request.prompt,
     n: 1,
@@ -337,6 +339,8 @@ export async function editImage(request: ImageEditRequest): Promise<ImageResult>
 // ILLUSTRATION STYLES
 // ============================================================================
 
+// These are art style descriptions to include in prompts,
+// NOT the API 'style' parameter (which is only for dall-e-3)
 export const ILLUSTRATION_STYLES = {
   watercolor: 'soft watercolor illustration with gentle colors and organic textures',
   digital: 'clean digital illustration with vibrant colors and smooth gradients',

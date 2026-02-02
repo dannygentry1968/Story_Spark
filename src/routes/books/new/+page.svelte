@@ -44,7 +44,13 @@
 
     // Step 4: Outline
     outline: '',
-    pages: [] as { pageNumber: number; outline: string }[]
+    // FIX: Store both outline/summary AND text for each page
+    pages: [] as {
+      pageNumber: number;
+      outline: string;  // Summary/what happens on this page
+      text: string;     // The actual page text for the book
+      illustrationPrompt: string; // Prompt for generating illustration
+    }[]
   };
 
   // Validation state
@@ -176,16 +182,26 @@
         }))
       });
 
-      // Parse the outline into pages
-      // Claude returns 'logline' for the summary
-      bookData.outline = result.logline || result.summary || '';
-      // Map Claude's page structure (summary field) to our structure (outline field)
+      // Parse the outline - Claude returns 'logline' for the summary
+      bookData.outline = result.logline || '';
+
+      // FIX: Properly extract ALL data from Claude's response
+      // Claude returns: { pageNumber, summary, text, illustrationPrompt }
       bookData.pages = (result.pages || []).map(p => ({
         pageNumber: p.pageNumber,
-        outline: p.summary || p.outline || p.text || ''
+        outline: p.summary || '',           // What happens on this page (description)
+        text: p.text || '',                  // FIX: The actual page text - SAVE THIS!
+        illustrationPrompt: p.illustrationPrompt || p.summary || ''  // Illustration prompt
       }));
 
-      showSuccess('Outline generated!');
+      // Log for debugging
+      console.log('Generated pages with text:', bookData.pages.map(p => ({
+        page: p.pageNumber,
+        hasText: !!p.text,
+        textLength: p.text?.length || 0
+      })));
+
+      showSuccess('Outline generated with page text!');
     } catch (err) {
       console.error('Failed to generate outline:', err);
       showError('Failed to generate outline');
@@ -219,13 +235,18 @@
       if (bookData.pages.length > 0) {
         try {
           const { updateBookPages } = await import('$lib/api/client');
+
+          // FIX: Save the TEXT along with other page data!
           await updateBookPages(newBook.id, bookData.pages.map(p => ({
             pageNumber: p.pageNumber,
             pageType: 'content',
-            illustrationPrompt: p.outline, // Use outline as illustration prompt
-            text: null,
+            outline: p.outline,                    // Page summary/description
+            text: p.text || null,                  // FIX: SAVE THE TEXT!
+            illustrationPrompt: p.illustrationPrompt || p.outline,
             layout: 'text_bottom'
           })));
+
+          console.log('Saved pages with text for book:', newBook.id);
         } catch (pageErr) {
           console.error('Failed to save pages:', pageErr);
           // Continue anyway - book was created
@@ -233,7 +254,7 @@
       }
 
       showSuccess('Book created successfully!');
-      goto(\`/books/\${newBook.id}\`);
+      goto(`/books/${newBook.id}`);
     } catch (err) {
       console.error('Failed to create book:', err);
       showError('Failed to create book');
@@ -246,6 +267,9 @@
   $: bookTypeInfo = BOOK_TYPES[bookData.bookType as keyof typeof BOOK_TYPES];
   $: ageInfo = AGE_RANGES[bookData.targetAge as keyof typeof AGE_RANGES];
   $: trimInfo = TRIM_SIZES[bookData.trimSize as keyof typeof TRIM_SIZES];
+
+  // Count pages with generated text
+  $: pagesWithText = bookData.pages.filter(p => p.text && p.text.trim().length > 0).length;
 </script>
 
 <svelte:head>
@@ -550,19 +574,50 @@ Example: A shy little fox named Finley is afraid to explore beyond her cozy den.
           <!-- Page Breakdown -->
           {#if bookData.pages.length > 0}
             <div>
-              <h4 class="font-medium text-gray-900 mb-3">Page-by-Page Breakdown</h4>
-              <div class="space-y-2 max-h-96 overflow-y-auto">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="font-medium text-gray-900">Page-by-Page Breakdown</h4>
+                <!-- Show text generation status -->
+                <span class="text-sm text-green-600">
+                  ✓ {pagesWithText}/{bookData.pages.length} pages have text
+                </span>
+              </div>
+              <div class="space-y-3 max-h-[500px] overflow-y-auto">
                 {#each bookData.pages as page, i}
-                  <div class="flex gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div class="w-8 h-8 rounded-full bg-spark-100 text-spark-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                      {page.pageNumber}
-                    </div>
-                    <div class="flex-1">
-                      <textarea
-                        bind:value={bookData.pages[i].outline}
-                        rows="2"
-                        class="input text-sm"
-                      ></textarea>
+                  <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <div class="flex items-start gap-3">
+                      <div class="w-8 h-8 rounded-full bg-spark-100 text-spark-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {page.pageNumber}
+                      </div>
+                      <div class="flex-1 space-y-3">
+                        <!-- Page Summary -->
+                        <div>
+                          <label class="text-xs font-medium text-gray-500 uppercase">What Happens</label>
+                          <textarea
+                            bind:value={bookData.pages[i].outline}
+                            rows="2"
+                            placeholder="Description of what happens on this page..."
+                            class="input text-sm mt-1"
+                          ></textarea>
+                        </div>
+
+                        <!-- Page Text (the actual book text) -->
+                        <div>
+                          <label class="text-xs font-medium text-gray-500 uppercase flex items-center gap-1">
+                            Page Text
+                            {#if page.text && page.text.trim()}
+                              <span class="text-green-500">✓</span>
+                            {:else}
+                              <span class="text-amber-500">(empty)</span>
+                            {/if}
+                          </label>
+                          <textarea
+                            bind:value={bookData.pages[i].text}
+                            rows="3"
+                            placeholder="The actual text that will appear in the book..."
+                            class="input text-sm mt-1 bg-white"
+                          ></textarea>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 {/each}
@@ -650,8 +705,11 @@ Example: A shy little fox named Finley is afraid to explore beyond her cozy den.
 
           {#if bookData.pages.length > 0}
             <div>
-              <h4 class="text-sm font-medium text-gray-500 mb-1">Pages Planned</h4>
-              <p class="text-gray-900">{bookData.pages.length} pages outlined</p>
+              <h4 class="text-sm font-medium text-gray-500 mb-1">Pages</h4>
+              <div class="flex items-center gap-4">
+                <p class="text-gray-900">{bookData.pages.length} pages outlined</p>
+                <span class="text-green-600 text-sm">✓ {pagesWithText} pages with text</span>
+              </div>
             </div>
           {/if}
         </div>
