@@ -33,7 +33,7 @@ async function ensureStorageDir(subdir: string): Promise<string> {
 // IMAGE GENERATION TYPES
 // ============================================================================
 
-// GPT Image model parameters (gpt-image-1, gpt-image-1.5)
+// GPT Image model parameters (gpt-image-1, gpt-image-1)
 // Note: 'style' parameter is NOT supported for gpt-image models (only dall-e-3)
 export interface ImageGenerationRequest {
   prompt: string;
@@ -74,10 +74,10 @@ export interface PageIllustrationRequest {
 export async function generateImage(request: ImageGenerationRequest): Promise<ImageResult> {
   const openai = getClient();
 
-  // Use gpt-image-1.5 (latest model as of Dec 2025)
+  // Use gpt-image-1 (latest model as of Dec 2025)
   // Note: 'style' parameter is NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1.5',
+    model: 'gpt-image-1',
     prompt: request.prompt,
     n: 1,
     size: request.size || '1024x1024',
@@ -133,7 +133,7 @@ High quality, professional children's book illustration style.`;
 
   // Note: 'style' parameter removed - NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1.5',
+    model: 'gpt-image-1',
     prompt,
     n: 1,
     size: '1024x1024',
@@ -194,7 +194,7 @@ Art Style: ${request.style}, professional children's book illustration.`;
 
   // Note: 'style' parameter removed - NOT supported for gpt-image models
   const response = await openai.images.generate({
-    model: 'gpt-image-1.5',
+    model: 'gpt-image-1',
     prompt,
     n: 1,
     size: request.size || '1024x1024',
@@ -262,7 +262,7 @@ Requirements:
   // Note: 'style' parameter removed - NOT supported for gpt-image models
   // Size updated to valid gpt-image dimensions (1024x1536 for portrait)
   const response = await openai.images.generate({
-    model: 'gpt-image-1.5',
+    model: 'gpt-image-1',
     prompt,
     n: 1,
     size: '1024x1536', // Portrait for book cover (corrected from invalid 1024x1792)
@@ -308,7 +308,7 @@ export async function editImage(request: ImageEditRequest): Promise<ImageResult>
 
   // Create edit request
   const response = await openai.images.edit({
-    model: 'gpt-image-1.5',
+    model: 'gpt-image-1',
     image: imageFile,
     prompt: request.prompt,
     n: 1,
